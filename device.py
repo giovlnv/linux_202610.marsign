@@ -102,7 +102,8 @@ def import_pairing(path, host=None):
     if not source.name.startswith("remote_") or source.suffix != ".plist":
         raise ValueError("Expected a remote_<udid>.plist pairing record")
     target = get_home_folder() / source.name
-    shutil.copyfile(source, target)
+    if source.resolve() != target.resolve():
+        shutil.copyfile(source, target)
     target.chmod(0o600)
     if host:
         save_pairing_host(host)
