@@ -238,7 +238,7 @@ def sudo_write(path, text):
 async def cmd_schedule(args):
     if not shutil.which("systemctl"):
         sys.exit("Scheduling needs systemd")
-    credential = (CREDSTORE / account.CREDENTIAL_NAME).exists()
+    credential = subprocess.run(["sudo", "test", "-f", str(CREDSTORE / account.CREDENTIAL_NAME)]).returncode == 0
     if not credential:
         print("No saved password yet (marsign.py save-password); refreshes work until Apple asks to sign in again.")
     service, timer = units(args.time, credential)
