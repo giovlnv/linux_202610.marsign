@@ -12,8 +12,8 @@ class AppleError(Exception):
 
 
 def data_dir():
-    base = os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share"
-    path = Path(base) / "Marsign"
+    custom = os.environ.get("MARSIGN_DATA")
+    path = Path(custom) if custom else Path.home() / ".local" / "share" / "Marsign"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

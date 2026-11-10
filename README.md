@@ -1,59 +1,115 @@
 # Marsign
 
-Personal installer and weekly re-signer for my own iPhone apps (Marscade, Familiar), run from Windows.
+Personal installer and weekly re-signer for my own iPhone apps (Marscade, Familiar), run on Linux.
+Day to day it runs on ares: a systemd timer re-signs the apps over Wi-Fi and Home Assistant sends the result.
 
 ## Setup
 
-1. Install Python 3.10+ and the Apple Devices app (or iTunes).
-2. `py -m pip install -r requirements.txt`
-3. Plug the iPhone in, unlock it and tap **Trust**.
+    sudo apt install -y usbmuxd python3-venv git
+    git clone https://github.com/giovlnv/linux_202610.marsign && cd linux_202610.marsign
+    python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+    .venv/bin/python marsign.py setup
 
 ## Commands
 
-    py marsign.py login                      sign in; the password is kept in Windows Credential Manager
-    py marsign.py install app.ipa            sign with your Apple ID, install, and remember it for refresh
-    py marsign.py status                     apps installed through Marsign and days left
-    py marsign.py refresh [--force]          re-sign apps with 2 days or less left
-    py marsign.py wifi                       let Marsign reach the iPhone over Wi-Fi (once, over USB)
-    py marsign.py schedule [--time 20:00]    daily automatic refresh via Task Scheduler
-    py marsign.py unschedule                 remove the scheduled refresh
-    py marsign.py uninstall BUNDLE_ID        remove an app from the iPhone
-    py marsign.py devices                    list connected iPhones
-    py marsign.py apps                       list installed user apps
-    py marsign.py logout                     forget the saved Apple session
+Run as `.venv/bin/python marsign.py <command>`.
+
+    login                    sign in with your Apple ID (password kept in the keyring unless --no-save)
+    install app.ipa          sign with your Apple ID, install, and remember it for refresh
+    status                   apps installed through Marsign and days left
+    refresh [--force]        re-sign apps with 2 days or less left
+    pair-wifi                create the Wi-Fi pairing record (once, iPhone on USB)
+    import-pairing FILE      use a Wi-Fi pairing record made on another machine
+    save-password            save the Apple ID password for the timer (systemd-creds)
+    schedule [--time 03:00]  daily check with a systemd timer
+    unschedule               remove the timer
+    notify-test              send a test notification to Home Assistant
+    devices                  the iPhone over USB, or over Wi-Fi when nothing is plugged in
+    apps                     installed user apps
+    uninstall BUNDLE_ID      remove an app from the iPhone
+    logout                   forget the saved Apple session
 
 Manual signing, without an Apple ID:
 
-    py marsign.py setup                      download zsign (pinned version, checksum verified)
-    py marsign.py profile dev.mobileprovision
-    py marsign.py sign app.ipa --p12 cert.p12 --password PW --profile dev.mobileprovision
-    py marsign.py install app.ipa --p12 cert.p12 --password PW --profile dev.mobileprovision
+    profile dev.mobileprovision
+    sign app.ipa --p12 cert.p12 --password PW --profile dev.mobileprovision
+    install app.ipa --p12 cert.p12 --password PW --profile dev.mobileprovision
+
+## Wi-Fi
+
+iOS 17 and later cut off the old Wi-Fi connection as soon as a service starts, so Marsign uses the
+same RemotePairing tunnel as Xcode. `pair-wifi` creates its record once over USB, with no prompt on
+the iPhone; it is saved as `~/.local/share/pymobiledevice3/remote_<udid>.plist`. After that every
+command finds the iPhone on the local network by itself. A plugged-in iPhone is always used over USB.
+
+The record gives full access to the iPhone: keep it private and never commit it.
+
+## ares
+
+Everything below runs on ares as `mars`, after the setup above.
+
+1. Copy the data from the machine that already signs (`~/.local/share/Marsign` and the
+   `remote_<udid>.plist` record), so the same certificate and Apple session are reused. Starting fresh
+   instead would revoke the certificate the installed apps are signed with.
+
+        sudo install -d -o mars -g mars /srv/config/marsign
+        rsync -a ~/.local/share/Marsign/ ~/.local/share/pymobiledevice3/remote_*.plist mars@ares:/srv/config/marsign/
+
+2. On ares:
+
+        export MARSIGN_DATA=/srv/config/marsign
+        .venv/bin/python marsign.py import-pairing /srv/config/marsign/remote_<udid>.plist
+        rm /srv/config/marsign/remote_<udid>.plist
+        .venv/bin/python marsign.py save-password
+        echo 'MARSIGN_HA_WEBHOOK=http://localhost:8123/api/webhook/<webhook_id>' > /srv/config/marsign/env
+        chmod 600 /srv/config/marsign/env
+        .venv/bin/python marsign.py devices
+        .venv/bin/python marsign.py schedule
+        sudo systemctl start marsign-refresh.service    # first run; add --force by hand to test a re-sign
+
+3. Logs: `journalctl -u marsign-refresh`.
+
+Discovery uses mDNS: if ufw is on, allow it with `sudo ufw allow 5353/udp`.
+
+## Home Assistant
+
+Marsign posts `{"title", "message"}` to the webhook after each refresh: apps re-signed, a re-sign
+failed, or the iPhone was not reachable while apps were due. An automation passes it to the phone:
+
+    alias: marsign notifications
+    triggers:
+      - trigger: webhook
+        webhook_id: <webhook_id>
+        allowed_methods: [POST]
+        local_only: true
+    actions:
+      - action: notify.mobile_app_<iphone>
+        data:
+          title: "{{ trigger.json.title }}"
+          message: "{{ trigger.json.message }}"
 
 ## Where things are kept
 
-`%LOCALAPPDATA%\Marsign`: the Apple session token, this PC's device identity, the signing key and
-certificate, provisioning profiles, a copy of each installed .ipa, and `refresh.log`. The Apple ID
-password is kept in Windows Credential Manager (skip with `login --no-save`) so refreshes can sign in
-again on their own; `logout` removes it.
+`~/.local/share/Marsign`, or `MARSIGN_DATA` when set: the Apple session token, this machine's device
+identity, the signing key and certificate, provisioning profiles, a copy of each installed .ipa and
+the app list. The password lives in the keyring (desktop) or in
+`/etc/credstore.encrypted/marsign-apple` (ares), which only the timer's service can decrypt.
 
 Apple rejects locally generated device identity data now, so Marsign gets it from an anisette v3 server:
 `mac-ani.jkcoxson.com` by default, the same as iloader. Alternatives are `new.ani.sidestore.io` and
 `ani3.stikstore.app`; set `MARSIGN_ANISETTE` to use one.
-The server sees this PC's device identifier, never the Apple ID, password or codes.
+The server sees this machine's device identifier, never the Apple ID, password or codes.
 
 The certificate is registered under the machine name "Marsign", so it lives alongside AltStore's
 or Xcode's instead of replacing them. Only older Marsign certificates are ever revoked.
 
+## Tests
+
+    .venv/bin/python -m unittest discover -s tests -t .
+
 ## Credits
 
 The Apple sign-in and developer-portal flow follows [iPASide](https://github.com/pwnapplehat/iPASide)
-(MIT). Signing uses [zsign](https://github.com/zhlynn/zsign); device access uses
+(MIT). Signing uses [zsign](https://github.com/zhlynn/zsign); device access and the Wi-Fi tunnel use
 [pymobiledevice3](https://github.com/doronz88/pymobiledevice3); the anisette v3 protocol follows
 [isideload](https://github.com/nab138/isideload), iloader's library.
-
-## Roadmap
-
-1. Install over USB (done)
-2. Sign with zsign (done)
-3. Free Apple ID certificate and provisioning profile (done)
-4. One command for all apps, automatic weekly refresh over Wi-Fi (done)

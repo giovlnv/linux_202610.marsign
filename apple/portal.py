@@ -34,7 +34,7 @@ def _call(endpoint, params=None, team=None, _retry=True):
                       })
     if r.status_code == 401:
         if not _retry:
-            raise AppleError("Apple session expired; run: py marsign.py login")
+            raise AppleError("Apple session expired; run: marsign.py login")
         account.relogin()
         return _call(endpoint, params, team, _retry=False)
     r.raise_for_status()

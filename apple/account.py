@@ -2,8 +2,10 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import plistlib
 import time
+from pathlib import Path
 
 import keyring
 import requests
@@ -206,6 +208,17 @@ def _app_token(spd):
 
 
 KEYRING_SERVICE = "Marsign"
+CREDENTIAL_NAME = "marsign-apple"
+
+
+def saved_password(email):
+    folder = os.environ.get("CREDENTIALS_DIRECTORY")
+    if folder and (Path(folder) / CREDENTIAL_NAME).is_file():
+        return (Path(folder) / CREDENTIAL_NAME).read_text().strip()
+    try:
+        return keyring.get_password(KEYRING_SERVICE, email)
+    except keyring.errors.KeyringError:
+        return None
 
 
 def login(email, password, ask_code, save_password=False):
@@ -232,12 +245,12 @@ def _expired(data):
 def relogin():
     path = _session_file()
     email = json.loads(path.read_text()).get("email") if path.exists() else None
-    password = email and keyring.get_password(KEYRING_SERVICE, email)
+    password = email and saved_password(email)
     if not password:
-        raise AppleError("Apple session expired and no saved password; run: py marsign.py login")
+        raise AppleError("Apple session expired and no saved password; run: marsign.py login")
 
     def no_code(_):
-        raise AppleError("Apple asked for a 2FA code; run: py marsign.py login")
+        raise AppleError("Apple asked for a 2FA code; run: marsign.py login")
 
     print(f"Signing in again as {email}...")
     return login(email, password, no_code)
@@ -246,7 +259,7 @@ def relogin():
 def session():
     path = _session_file()
     if not path.exists():
-        raise AppleError("Not signed in; run: py marsign.py login")
+        raise AppleError("Not signed in; run: marsign.py login")
     data = json.loads(path.read_text())
     return relogin() if _expired(data) else data
 
@@ -257,6 +270,6 @@ def logout():
         email = json.loads(path.read_text()).get("email")
         try:
             keyring.delete_password(KEYRING_SERVICE, email)
-        except keyring.errors.PasswordDeleteError:
+        except keyring.errors.KeyringError:
             pass
     path.unlink(missing_ok=True)
