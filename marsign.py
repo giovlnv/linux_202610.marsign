@@ -142,11 +142,12 @@ async def cmd_install(args):
 async def cmd_pair_wifi(args):
     record = await device.pair_wifi(args.udid)
     print(f"Wi-Fi pairing record: {record}")
-    print("Copy it to the machine that re-signs and run: marsign.py import-pairing <file>")
+    print(f"Copy it to the machine that re-signs and run: marsign.py import-pairing <file> --host {device.pairing_host()}")
 
 
 async def cmd_import_pairing(args):
-    print(f"Imported to {device.import_pairing(args.record)}")
+    print(f"Imported to {device.import_pairing(args.record, args.host)}")
+    print(f"Connecting as {device.pairing_host()}")
 
 
 async def cmd_status(args):
@@ -299,6 +300,7 @@ def main():
     sub.add_parser("pair-wifi", help="create the Wi-Fi pairing record (once, over USB)")
     pairing = sub.add_parser("import-pairing", help="use a Wi-Fi pairing record made on another machine")
     pairing.add_argument("record")
+    pairing.add_argument("--host", help="hostname of the machine that ran pair-wifi")
     sub.add_parser("status", help="show apps installed through Marsign and days left")
     refresh_cmd = sub.add_parser("refresh", help="re-sign and reinstall apps close to expiring")
     refresh_cmd.add_argument("--days", type=float, default=2, help="refresh apps with this many days left or fewer")

@@ -19,7 +19,7 @@ Run as `.venv/bin/python marsign.py <command>`.
     status                   apps installed through Marsign and days left
     refresh [--force]        re-sign apps with 2 days or less left
     pair-wifi                create the Wi-Fi pairing record (once, iPhone on USB)
-    import-pairing FILE      use a Wi-Fi pairing record made on another machine
+    import-pairing FILE --host NAME   use a Wi-Fi pairing record made on machine NAME
     save-password            save the Apple ID password for the timer (systemd-creds)
     schedule [--time 03:00]  daily check with a systemd timer
     unschedule               remove the timer
@@ -42,6 +42,10 @@ same RemotePairing tunnel as Xcode. `pair-wifi` creates its record once over USB
 the iPhone; it is saved as `~/.local/share/pymobiledevice3/remote_<udid>.plist`. After that every
 command finds the iPhone on the local network by itself. A plugged-in iPhone is always used over USB.
 
+The iPhone only accepts the record from the hostname that paired it, so Marsign saves that name as
+`pairing-host` in the data folder and sends it when connecting. `import-pairing --host` sets it on
+another machine.
+
 The record gives full access to the iPhone: keep it private and never commit it.
 
 ## ares
@@ -58,7 +62,7 @@ Everything below runs on ares as `mars`, after the setup above.
 2. On ares:
 
         export MARSIGN_DATA=/srv/config/marsign
-        .venv/bin/python marsign.py import-pairing /srv/config/marsign/remote_<udid>.plist
+        .venv/bin/python marsign.py import-pairing /srv/config/marsign/remote_<udid>.plist --host <pairing machine>
         rm /srv/config/marsign/remote_<udid>.plist
         .venv/bin/python marsign.py save-password
         echo 'MARSIGN_HA_WEBHOOK=http://localhost:8123/api/webhook/<webhook_id>' > /srv/config/marsign/env
