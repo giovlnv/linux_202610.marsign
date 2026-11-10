@@ -1,4 +1,4 @@
-pymobiledevice3>=11.42
+pymobiledevice3>=11.50,<12
 websockets>=13
 srp>=1.0.22
 cryptography>=44

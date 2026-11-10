@@ -11,7 +11,6 @@ from pathlib import Path
 
 ZSIGN_VERSION = "v1.1.2"
 ZSIGN_BUILDS = {
-    "Windows": ("zsign-windows-x64.zip", "96b5bf7029a52c67cdb78b68b3666d8ff1e31e5c435535964be2a482afc09e5c", "zsign.exe"),
     "Linux": ("zsign-linux-x86_64.tar.gz", "d55e6a8650949a260892a9687ac1dfe4a9c79c2e3ecfe00a0eeb09b7b694282e", "zsign"),
 }
 TOOLS = Path(__file__).parent / "tools"
@@ -35,11 +34,8 @@ def ensure_zsign():
     if hashlib.sha256(data).hexdigest() != sha256:
         raise RuntimeError("zsign download failed its checksum; not using it")
     TOOLS.mkdir(exist_ok=True)
-    if asset.endswith(".zip"):
-        exe.write_bytes(zipfile.ZipFile(io.BytesIO(data)).read(name))
-    else:
-        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
-            exe.write_bytes(tar.extractfile(name).read())
+    with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+        exe.write_bytes(tar.extractfile(name).read())
     exe.chmod(0o755)
     return exe
 
