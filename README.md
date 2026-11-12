@@ -1,6 +1,6 @@
 # Marsign
 
-Personal installer and weekly re-signer for my own iPhone apps (Marscade, Familiar), run on Linux.
+Personal installer and weekly re-signer for my own iPhone apps (Familiar, Athena), run on Linux.
 Day to day it runs on ares: a systemd timer re-signs the apps over Wi-Fi and Home Assistant sends the result.
 
 ## Setup
