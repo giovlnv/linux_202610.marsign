@@ -18,7 +18,7 @@ class NotifyTest(unittest.TestCase):
     def test_failure_wins_title_and_keeps_successes(self):
         title, body = notify.message(resigned=[("Marscade", datetime(2026, 11, 17))], failed=["Familiar: boom"])
         self.assertEqual(title, "Marsign: re-sign failed")
-        self.assertEqual(body.splitlines(), ["Familiar: boom", "Re-signed Marscade (until 17/11)."])
+        self.assertEqual(body.splitlines(), ["Familiar: boom", "Run marsign.py refresh on ares to see the details and try again.", "Re-signed Marscade (until 17/11)."])
 
     def test_unreachable(self):
         title, body = notify.message(unreachable=[("Familiar", 1.5)])
