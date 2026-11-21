@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -91,15 +91,20 @@ async def cmd_profile(args):
     print(f"Name:      {info['name']}")
     print(f"Bundle ID: {info['bundle_id']}")
     print(f"Team:      {info['team']}")
-    print(f"Expires:   {info['expires']:%Y-%m-%d %H:%M}")
+    print(f"Expires:   {aware(info['expires']).astimezone():%d/%m/%Y %H:%M}")
     print(f"Devices:   {', '.join(info['devices']) or 'none'}")
+
+
+def aware(expires):
+    """Profile dates come from the plist without a timezone; they are UTC."""
+    return expires.replace(tzinfo=expires.tzinfo or timezone.utc)
 
 
 def manual_sign(args, ipa, output=None):
     if not (args.p12 and args.profile):
         sys.exit("Manual signing needs both --p12 and --profile")
     out, info = signer.sign(ipa, args.p12, args.profile, args.password, output)
-    print(f"Signed {info['bundle_id']} (expires {info['expires']:%Y-%m-%d}) -> {out}")
+    print(f"Signed {info['bundle_id']} (until {registry.until(aware(info['expires']))}) -> {out}")
     return out
 
 
@@ -120,7 +125,8 @@ async def sign_and_push(dev, ipa):
     assets = portal.provision(app["bundle_id"], app["name"], udid, device_name)
     signed = Path(tempfile.gettempdir()) / f"marsign-{assets['bundle_id']}.ipa"
     _, info = signer.sign(ipa, assets["p12"], assets["profile"], assets["password"], signed)
-    print(f"Signed {info['bundle_id']} (expires {info['expires']:%Y-%m-%d})")
+    info["expires"] = aware(info["expires"])
+    print(f"Signed {info['bundle_id']} (until {registry.until(info['expires'])})")
     await push(dev, signed)
     signed.unlink(missing_ok=True)
     registry.record(ipa, app, info["bundle_id"], info["expires"])
@@ -155,7 +161,9 @@ async def cmd_status(args):
     if not apps:
         print("No apps installed through Marsign yet.")
     for bundle_id, entry in sorted(apps.items()):
-        print(f"{entry['name']} {entry['version']}  {registry.days_left(entry):.1f} days left  {bundle_id}")
+        print(f"{entry['name']} {entry['version']}  {registry.describe(entry)}  {bundle_id}")
+    if any(registry.days_left(e) <= 0 for e in apps.values()):
+        print("Expired apps no longer open; marsign.py refresh re-signs them.")
 
 
 async def refresh(due, udid):
@@ -183,7 +191,7 @@ async def cmd_refresh(args):
     try:
         resigned, failed = await refresh(due, args.udid)
     except device.DeviceNotFound:
-        notify.report(unreachable=[(e["name"], registry.days_left(e)) for e in due.values()])
+        notify.report(unreachable=[(e["name"], registry.describe(e)) for e in due.values()])
         raise
     except Exception as e:
         notify.report(failed=[f"{type(e).__name__}: {e}"])
