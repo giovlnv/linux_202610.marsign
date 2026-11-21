@@ -22,6 +22,12 @@ UNIT_DIR = Path("/etc/systemd/system")
 CREDSTORE = Path("/etc/credstore.encrypted")
 
 
+def columns(rows):
+    """Lines with every column but the last padded to the same width, so lists read down."""
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]) - 1)] if rows else []
+    return ["  ".join([cell.ljust(w) for cell, w in zip(row, widths)] + [row[-1]]) for row in rows]
+
+
 def check_ipa(path):
     ipa = Path(path)
     if not ipa.is_file():
@@ -53,9 +59,12 @@ async def cmd_apps(args):
     async with device.connect(args.udid) as dev:
         async with InstallationProxyService(lockdown=dev) as proxy:
             apps = await proxy.get_apps(application_type="User")
-    for bundle_id, info in sorted(apps.items()):
-        name = info.get("CFBundleDisplayName") or info.get("CFBundleName", "?")
-        print(f"{name}  {info.get('CFBundleShortVersionString', '?')}  {bundle_id}")
+    if not apps:
+        print("No apps on the iPhone besides Apple's. Install one with: marsign.py install app.ipa")
+    rows = [[info.get("CFBundleDisplayName") or info.get("CFBundleName", "?"),
+             info.get("CFBundleShortVersionString", "?"), bundle_id] for bundle_id, info in sorted(apps.items())]
+    for line in columns(rows):
+        print(line)
 
 
 async def cmd_login(args):
@@ -102,7 +111,7 @@ def aware(expires):
 
 def manual_sign(args, ipa, output=None):
     if not (args.p12 and args.profile):
-        sys.exit("Manual signing needs both --p12 and --profile")
+        sys.exit("Manual signing needs both --p12 and --profile.")
     out, info = signer.sign(ipa, args.p12, args.profile, args.password, output)
     print(f"Signed {info['bundle_id']} (until {registry.until(aware(info['expires']))}) -> {out}")
     return out
@@ -113,6 +122,7 @@ async def cmd_sign(args):
 
 
 async def push(dev, signed):
+    print("Installing on the iPhone...")
     async with InstallationProxyService(lockdown=dev) as proxy:
         await proxy.install_from_local(signed)
 
@@ -137,10 +147,9 @@ async def sign_and_push(dev, ipa):
 async def cmd_install(args):
     ipa = check_ipa(args.ipa)
     async with device.connect(args.udid) as dev:
-        if args.unsigned_ok:
-            await push(dev, ipa)
-        elif args.p12 or args.profile:
-            await push(dev, manual_sign(args, ipa))
+        if args.unsigned_ok or args.p12 or args.profile:
+            await push(dev, ipa if args.unsigned_ok else manual_sign(args, ipa))
+            print(f"Installed {ipa.name}")
         else:
             await sign_and_push(dev, ipa)
 
@@ -160,8 +169,10 @@ async def cmd_status(args):
     apps = registry.load()
     if not apps:
         print("No apps installed through Marsign yet. Install one with: marsign.py install app.ipa")
-    for bundle_id, entry in sorted(apps.items()):
-        print(f"{entry['name']} {entry['version']}  {registry.describe(entry)}  {bundle_id}")
+    rows = [[entry["name"], entry["version"], registry.describe(entry), bundle_id]
+            for bundle_id, entry in sorted(apps.items())]
+    for line in columns(rows):
+        print(line)
     if any(registry.days_left(e) <= 0 for e in apps.values()):
         print("Expired apps no longer open; marsign.py refresh re-signs them.")
 
@@ -191,7 +202,7 @@ async def cmd_refresh(args):
     if not due:
         if apps:
             entry = min(apps.values(), key=registry.days_left)
-            print(f"Next: {entry['name']} ({registry.describe(entry)}); re-signed at {args.days:g} days or less")
+            print(f"Next: {entry['name']} ({registry.describe(entry)}); re-signed at {args.days:g} {'day' if args.days == 1 else 'days'} or less")
         return
     try:
         resigned, failed = await refresh(due, args.udid)
@@ -211,7 +222,7 @@ async def cmd_uninstall(args):
     name = f"{entry['name']} ({args.bundle_id})" if entry else args.bundle_id
     if not args.yes:
         if not sys.stdin.isatty():
-            sys.exit(f"Not removed: add --yes to remove {name} without asking")
+            sys.exit(f"Not removed: add --yes to remove {name} without asking.")
         answer = input(f"Remove {name} and its data from the iPhone? This can't be undone. [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             sys.exit("Not removed")
@@ -258,7 +269,7 @@ def sudo_write(path, text):
 
 async def cmd_schedule(args):
     if not shutil.which("systemctl"):
-        sys.exit("Scheduling needs systemd")
+        sys.exit("Scheduling needs systemd.")
     credential = subprocess.run(["sudo", "test", "-f", str(CREDSTORE / account.CREDENTIAL_NAME)]).returncode == 0
     if not credential:
         print("No saved password yet (marsign.py save-password); refreshes work until Apple asks to sign in again.")
@@ -276,7 +287,7 @@ async def cmd_unschedule(args):
     subprocess.run(["sudo", "rm", "-f", str(UNIT_DIR / f"{SERVICE}.service"), str(UNIT_DIR / f"{SERVICE}.timer")],
                    check=True)
     subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-    print("Removed the scheduled refresh")
+    print("Removed the daily check; apps are no longer re-signed on their own.")
 
 
 async def cmd_notify_test(args):
@@ -287,55 +298,59 @@ async def cmd_notify_test(args):
     print("Sent" if sent else "Not sent: Home Assistant didn't accept it (see the error above)")
 
 
-def main():
-    parser = argparse.ArgumentParser(prog="marsign")
+def build_parser():
+    """Commands in the README's order: the everyday ones first, manual signing and setup last."""
+    parser = argparse.ArgumentParser(
+        prog="marsign.py", description="Sign, install and re-sign your own iPhone apps from Linux.")
     parser.add_argument("--udid", help="target a specific device")
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
-
-    sub.add_parser("devices", help="list connected devices (USB, or Wi-Fi when none is plugged in)")
-    sub.add_parser("apps", help="list installed user apps")
-    login = sub.add_parser("login", help="sign in with your Apple ID")
-    login.add_argument("email", nargs="?", help="Apple ID email (asked when left out)")
-    login.add_argument("--no-save", action="store_true", help="don't save the password in the keyring")
-    sub.add_parser("logout", help="forget the saved Apple session")
-    sub.add_parser("save-password", help="save the Apple ID password for the scheduled refresh (systemd-creds)")
-    sub.add_parser("setup", help="download zsign")
-
-    profile = sub.add_parser("profile", help="show what a provisioning profile allows")
-    profile.add_argument("profile", help=".mobileprovision file")
 
     def signing_args(p):
         p.add_argument("--p12", help="use this certificate instead of your Apple ID")
         p.add_argument("--profile", help="use this provisioning profile instead of your Apple ID")
         p.add_argument("--password", default="", help="password for --p12")
 
-    sign = sub.add_parser("sign", help="sign an .ipa with a given certificate and profile")
-    sign.add_argument("ipa", help=".ipa file to sign")
-    sign.add_argument("-o", "--output", help="where to write the signed .ipa (default: <name>-signed.ipa)")
-    signing_args(sign)
-
+    login = sub.add_parser("login", help="sign in with your Apple ID")
+    login.add_argument("email", nargs="?", help="Apple ID email (asked when left out)")
+    login.add_argument("--no-save", action="store_true", help="don't save the password in the keyring")
     install = sub.add_parser("install", help="sign with your Apple ID and install an .ipa")
     install.add_argument("ipa", help=".ipa file to install")
     install.add_argument("--unsigned-ok", action="store_true", help="install the .ipa as-is")
     signing_args(install)
+    sub.add_parser("status", help="show apps installed through Marsign and days left")
+    refresh_cmd = sub.add_parser("refresh", help="re-sign and reinstall apps close to expiring")
+    refresh_cmd.add_argument("--days", type=float, default=2, help="refresh apps with this many days left or fewer")
+    refresh_cmd.add_argument("--force", action="store_true", help="refresh every app now")
 
     sub.add_parser("pair-wifi", help="create the Wi-Fi pairing record (once, over USB)")
     pairing = sub.add_parser("import-pairing", help="use a Wi-Fi pairing record made on another machine")
     pairing.add_argument("record", help="remote_<udid>.plist made by pair-wifi")
     pairing.add_argument("--host", help="hostname of the machine that ran pair-wifi")
-    sub.add_parser("status", help="show apps installed through Marsign and days left")
-    refresh_cmd = sub.add_parser("refresh", help="re-sign and reinstall apps close to expiring")
-    refresh_cmd.add_argument("--days", type=float, default=2, help="refresh apps with this many days left or fewer")
-    refresh_cmd.add_argument("--force", action="store_true", help="refresh every app now")
+    sub.add_parser("save-password", help="save the Apple ID password for the daily check")
+    schedule = sub.add_parser("schedule", help="re-sign every day with a systemd timer (the daily check)")
+    schedule.add_argument("--time", default="03:00", help="daily check time, HH:MM")
+    sub.add_parser("unschedule", help="remove the daily check")
+    sub.add_parser("notify-test", help="send a test notification to Home Assistant")
+
+    sub.add_parser("devices", help="show the iPhone over USB, or over Wi-Fi when unplugged")
+    sub.add_parser("apps", help="list installed user apps")
     uninstall = sub.add_parser("uninstall", help="remove an app from the iPhone")
     uninstall.add_argument("bundle_id", help="bundle ID, as shown by status or apps")
     uninstall.add_argument("--yes", action="store_true", help="don't ask before removing")
-    schedule = sub.add_parser("schedule", help="check every day with a systemd timer")
-    schedule.add_argument("--time", default="03:00", help="daily check time, HH:MM")
-    sub.add_parser("unschedule", help="remove the systemd timer")
-    sub.add_parser("notify-test", help="send a test notification to Home Assistant")
+    sub.add_parser("logout", help="forget the saved Apple session")
 
-    args = parser.parse_args()
+    profile = sub.add_parser("profile", help="show what a provisioning profile allows")
+    profile.add_argument("profile", help=".mobileprovision file")
+    sign = sub.add_parser("sign", help="sign an .ipa with a given certificate and profile")
+    sign.add_argument("ipa", help=".ipa file to sign")
+    sign.add_argument("-o", "--output", help="where to write the signed .ipa (default: <name>-signed.ipa)")
+    signing_args(sign)
+    sub.add_parser("setup", help="download zsign")
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
     handlers = {
         "devices": cmd_devices, "apps": cmd_apps, "login": cmd_login, "logout": cmd_logout,
         "save-password": cmd_save_password, "setup": cmd_setup, "profile": cmd_profile, "sign": cmd_sign,
@@ -347,11 +362,12 @@ def main():
         asyncio.run(handlers[args.command](args))
     except (device.DeviceNotFound, AppleError) as e:
         sys.exit(f"\n{e}")
-    except KeyboardInterrupt:
-        sys.exit(1)
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled", file=sys.stderr)
+        sys.exit(130)
     except FileNotFoundError as e:
         sys.exit(f"\nFile not found: {e.filename}")
-    except ValueError as e:
+    except (ValueError, RuntimeError) as e:
         sys.exit(f"\n{e}")
     except Exception as e:
         sys.exit(f"\nError: {type(e).__name__}: {e}")
