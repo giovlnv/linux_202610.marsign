@@ -177,7 +177,7 @@ async def refresh(due, udid):
 async def cmd_refresh(args):
     apps = registry.load()
     due = {b: e for b, e in apps.items() if args.force or registry.days_left(e) <= args.days}
-    print(f"[{datetime.now():%Y-%m-%d %H:%M}] {len(due)} of {len(apps)} apps due for refresh")
+    print(f"[{datetime.now():%Y-%m-%d %H:%M}] {len(due)} of {len(apps)} {'app' if len(apps) == 1 else 'apps'} due for refresh")
     if not due:
         return
     try:
@@ -262,7 +262,7 @@ async def cmd_notify_test(args):
     if not notify.webhook():
         sys.exit("MARSIGN_HA_WEBHOOK is not set")
     sent = notify.send("Marsign: test", "Notifications from Marsign work.")
-    print("Sent" if sent else "Not sent")
+    print("Sent" if sent else "Not sent: Home Assistant didn't accept it (see the error above)")
 
 
 def main():
