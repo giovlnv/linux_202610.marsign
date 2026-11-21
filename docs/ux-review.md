@@ -50,3 +50,43 @@ live pass: `--help`, `status`, `refresh` with nothing due, `uninstall` without a
 Doesn't apply: marsign is a CLI plus Home Assistant notifications, with no web page or screen. Visual rules (contrast, targets, type, palette, motion) don't apply either; the iPhone renders the notifications.
 
 checks: `python -m unittest discover -s tests -t .` passes, 17 tests (13 before, plus the date and uninstall tests). `tests/test_units.py` runs now with the repo's `.venv`. There's no linter or typecheck in the repo; `py_compile` passes on every file.
+
+## tapa de ux audit (real skill, 20/11)
+
+20/11/2026 · code and unit tests only · rules: tapa-de-ux-en (the real skill files, all ten topics in order). The sweep above worked from older reviews; this pass checks it against the actual rules. marsign is a CLI, so CLI conventions win: the visual topics became output layout, wording and terminal colour. Exercised only through the unit tests with a fake `MARSIGN_DATA` and `device.connect` / `requests.post` mocked; nothing ran `refresh`, `install`, `sign`, `uninstall` or `pair-wifi`.
+
+reviewed: `marsign.py` (all commands, `--help`, prompts, errors), `notify.py`, `registry.py`, `device.py`, `signer.py`, `apple/account.py` (prompts and errors), `README.md`. not reviewed: the notifications as the iPhone shows them; the real `login` flow against Apple.
+
+### topics
+
+- **hierarchy**: lists are the only layout. `status` and `apps` joined fields with two spaces, so with names of different lengths the dates and bundle IDs zigzagged ("same component, same spacing"). Fixed: columns line up.
+- **typography**: the terminal's font. Only sentence case applies: help strings are lowercase with no period, which is argparse's convention (conflict with sentence case; the project follows the CLI).
+- **accessibility**: no colour, so "never colour alone" holds. "Every control says what it is" is the `--help`: every argument says what it takes (sweep item 14). Lines fit 80 columns now (two help strings wrapped mid-word: "systemd-/creds").
+- **color**: no colour in the output. Adding colour isn't needed; if it ever comes, status words ("expired", "failed") stay as words.
+- **buttons and actions**: "every action responds": `install --unsigned-ok` and `install --p12 --profile` finished in silence. Fixed. The `[y/N]` confirm for `uninstall` follows the CLI convention instead of "verb buttons" (conflict noted); its question already names the app and what is lost.
+- **forms**: the prompts (`login`, 2FA code, phone choice, uninstall confirm). "Accept the way people type": a code pasted as "123 456" was sent with the space and rejected. Fixed. Ctrl-D at a prompt ended as "Error: EOFError: ". Fixed: "Cancelled", exit 130 like Ctrl-C (Jakob's law: the shell convention).
+- **states**: the sweep covered empty states for `status` and `refresh`; `apps` with nothing printed nothing. Fixed. "The wait fits the time": the push to the iPhone is the slowest step and had no line before it. Fixed: "Installing on the iPhone...". zsign errors showed "Error: RuntimeError: zsign failed: …". Fixed: the plain message; the checksum error now says to run `setup` again.
+- **ux writing**: one name for each thing: the timer was "systemd timer", "scheduled refresh", "timer" and "daily check" (in the notification). Fixed: "the daily check" in help, `unschedule` and README. The program called itself `marsign` in `--help` while every message says `marsign.py`. Fixed. Plural: "re-signed at 1 days or less" with `--days 1`. Fixed. Periods: complete-sentence errors got one, as the device errors already had.
+- **navigation**: the `--help` is the map. "A short path to what people do most": it listed `devices`, `apps`, `login`... with `status` and `refresh` 12th and 13th, in a different order from the README. Fixed: the README's order, everyday commands first; and a one-line description at the top.
+- **psychology**: Tesler and memory: `uninstall` needs the full signed bundle ID (with the team suffix), which people copy from `status`. Left open below. Peak-end: `refresh` ends with one line per app and a notification; fine.
+
+### rule findings added
+
+11 beyond the sweep: aligned columns, silent manual installs, codes with spaces, Ctrl-D ending as "Error: EOFError", `apps` empty state, no line before the push, raw RuntimeError names, four names for the daily check, two program names, "1 days", help order. Plus two finish items: periods on complete-sentence errors and help lines wrapping mid-word.
+
+### contradictions with the sweep
+
+None that undo its work. Sweep item 14 shortened the usage line but kept argparse's `prog="marsign"`, which contradicted every message's `marsign.py` ("one name for each thing"); fixed here.
+
+### fixes
+
+- 42ac80f: everything above (help order and name, columns, install responses, cancel, RuntimeError, daily-check wording, plural, 2FA code spaces, periods), with 7 new tests.
+
+### left open
+
+- `uninstall` could take the app name from the registry ("Familiar") instead of the signed bundle ID (Tesler, memory). Behaviour change; Mars's call.
+- Apple errors with HTTP codes and raw response text (sweep item 15), and the raw exception name in the "re-sign failed" notification: still debugging aids for a personal tool.
+- Missing name or version shows as "?"; the rule says "—". Stored in `apps.json` too, so changing it means a migration; small.
+- Less than a day left reads "0.3 days left"; hours would read better. Taste.
+
+checks: `python -m unittest discover -s tests -t .` with the repo's `.venv`: 24 tests pass (17 before, 7 new). `py_compile` passes on every file. No linter or typecheck in the repo.
