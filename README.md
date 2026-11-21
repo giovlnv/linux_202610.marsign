@@ -26,7 +26,7 @@ Run as `.venv/bin/python marsign.py <command>`.
     notify-test              send a test notification to Home Assistant
     devices                  the iPhone over USB, or over Wi-Fi when nothing is plugged in
     apps                     installed user apps
-    uninstall BUNDLE_ID      remove an app from the iPhone
+    uninstall BUNDLE_ID      remove an app from the iPhone (asks first; --yes skips the question)
     logout                   forget the saved Apple session
 
 Manual signing, without an Apple ID:

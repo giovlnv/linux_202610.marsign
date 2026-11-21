@@ -206,7 +206,15 @@ async def cmd_uninstall(args):
         async with InstallationProxyService(lockdown=dev) as proxy:
             await proxy.uninstall(args.bundle_id)
     registry.forget(args.bundle_id)
-    print(f"Removed {args.bundle_id}")
+    print(f"Removed {name}")
+    entry = registry.load().get(args.bundle_id)
+    name = f"{entry['name']} ({args.bundle_id})" if entry else args.bundle_id
+    if not args.yes:
+        if not sys.stdin.isatty():
+            sys.exit(f"Not removed: add --yes to remove {name} without asking")
+        answer = input(f"Remove {name} and its data from the iPhone? This can't be undone. [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            sys.exit("Not removed")
 
 
 def units(time, credential):
@@ -314,7 +322,8 @@ def main():
     refresh_cmd.add_argument("--days", type=float, default=2, help="refresh apps with this many days left or fewer")
     refresh_cmd.add_argument("--force", action="store_true", help="refresh every app now")
     uninstall = sub.add_parser("uninstall", help="remove an app from the iPhone")
-    uninstall.add_argument("bundle_id")
+    uninstall.add_argument("bundle_id", help="bundle ID, as shown by status or apps")
+    uninstall.add_argument("--yes", action="store_true", help="don't ask before removing")
     schedule = sub.add_parser("schedule", help="check every day with a systemd timer")
     schedule.add_argument("--time", default="03:00", help="daily check time, HH:MM")
     sub.add_parser("unschedule", help="remove the systemd timer")
