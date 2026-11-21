@@ -16,7 +16,7 @@ Run as `.venv/bin/python marsign.py <command>`.
 
     login                    sign in with your Apple ID (password kept in the keyring unless --no-save)
     install app.ipa          sign with your Apple ID, install, and remember it for refresh
-    status                   apps installed through Marsign and days left
+    status                   apps installed through Marsign, until when, and days left
     refresh [--force]        re-sign apps with 2 days or less left
     pair-wifi                create the Wi-Fi pairing record (once, iPhone on USB)
     import-pairing FILE --host NAME   use a Wi-Fi pairing record made on machine NAME

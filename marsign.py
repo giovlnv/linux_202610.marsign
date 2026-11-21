@@ -159,7 +159,7 @@ async def cmd_import_pairing(args):
 async def cmd_status(args):
     apps = registry.load()
     if not apps:
-        print("No apps installed through Marsign yet.")
+        print("No apps installed through Marsign yet. Install one with: marsign.py install app.ipa")
     for bundle_id, entry in sorted(apps.items()):
         print(f"{entry['name']} {entry['version']}  {registry.describe(entry)}  {bundle_id}")
     if any(registry.days_left(e) <= 0 for e in apps.values()):
@@ -186,7 +186,12 @@ async def cmd_refresh(args):
     apps = registry.load()
     due = {b: e for b, e in apps.items() if args.force or registry.days_left(e) <= args.days}
     print(f"[{datetime.now():%Y-%m-%d %H:%M}] {len(due)} of {len(apps)} {'app' if len(apps) == 1 else 'apps'} due for refresh")
+    if not apps:
+        print("No apps installed through Marsign yet. Install one with: marsign.py install app.ipa")
     if not due:
+        if apps:
+            entry = min(apps.values(), key=registry.days_left)
+            print(f"Next: {entry['name']} ({registry.describe(entry)}); re-signed at {args.days:g} days or less")
         return
     try:
         resigned, failed = await refresh(due, args.udid)
@@ -202,11 +207,6 @@ async def cmd_refresh(args):
 
 
 async def cmd_uninstall(args):
-    async with device.connect(args.udid) as dev:
-        async with InstallationProxyService(lockdown=dev) as proxy:
-            await proxy.uninstall(args.bundle_id)
-    registry.forget(args.bundle_id)
-    print(f"Removed {name}")
     entry = registry.load().get(args.bundle_id)
     name = f"{entry['name']} ({args.bundle_id})" if entry else args.bundle_id
     if not args.yes:
@@ -215,6 +215,11 @@ async def cmd_uninstall(args):
         answer = input(f"Remove {name} and its data from the iPhone? This can't be undone. [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
             sys.exit("Not removed")
+    async with device.connect(args.udid) as dev:
+        async with InstallationProxyService(lockdown=dev) as proxy:
+            await proxy.uninstall(args.bundle_id)
+    registry.forget(args.bundle_id)
+    print(f"Removed {name}")
 
 
 def units(time, credential):
@@ -276,7 +281,8 @@ async def cmd_unschedule(args):
 
 async def cmd_notify_test(args):
     if not notify.webhook():
-        sys.exit("MARSIGN_HA_WEBHOOK is not set")
+        sys.exit("MARSIGN_HA_WEBHOOK is not set. Run it as MARSIGN_HA_WEBHOOK=<webhook url> marsign.py notify-test;"
+                 f" the timer reads it from {data_dir() / 'env'}.")
     sent = notify.send("Marsign: test", "Notifications from Marsign work.")
     print("Sent" if sent else "Not sent: Home Assistant didn't accept it (see the error above)")
 
@@ -284,19 +290,19 @@ async def cmd_notify_test(args):
 def main():
     parser = argparse.ArgumentParser(prog="marsign")
     parser.add_argument("--udid", help="target a specific device")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
     sub.add_parser("devices", help="list connected devices (USB, or Wi-Fi when none is plugged in)")
     sub.add_parser("apps", help="list installed user apps")
     login = sub.add_parser("login", help="sign in with your Apple ID")
-    login.add_argument("email", nargs="?")
+    login.add_argument("email", nargs="?", help="Apple ID email (asked when left out)")
     login.add_argument("--no-save", action="store_true", help="don't save the password in the keyring")
     sub.add_parser("logout", help="forget the saved Apple session")
     sub.add_parser("save-password", help="save the Apple ID password for the scheduled refresh (systemd-creds)")
     sub.add_parser("setup", help="download zsign")
 
     profile = sub.add_parser("profile", help="show what a provisioning profile allows")
-    profile.add_argument("profile")
+    profile.add_argument("profile", help=".mobileprovision file")
 
     def signing_args(p):
         p.add_argument("--p12", help="use this certificate instead of your Apple ID")
@@ -304,18 +310,18 @@ def main():
         p.add_argument("--password", default="", help="password for --p12")
 
     sign = sub.add_parser("sign", help="sign an .ipa with a given certificate and profile")
-    sign.add_argument("ipa")
-    sign.add_argument("-o", "--output")
+    sign.add_argument("ipa", help=".ipa file to sign")
+    sign.add_argument("-o", "--output", help="where to write the signed .ipa (default: <name>-signed.ipa)")
     signing_args(sign)
 
     install = sub.add_parser("install", help="sign with your Apple ID and install an .ipa")
-    install.add_argument("ipa")
+    install.add_argument("ipa", help=".ipa file to install")
     install.add_argument("--unsigned-ok", action="store_true", help="install the .ipa as-is")
     signing_args(install)
 
     sub.add_parser("pair-wifi", help="create the Wi-Fi pairing record (once, over USB)")
     pairing = sub.add_parser("import-pairing", help="use a Wi-Fi pairing record made on another machine")
-    pairing.add_argument("record")
+    pairing.add_argument("record", help="remote_<udid>.plist made by pair-wifi")
     pairing.add_argument("--host", help="hostname of the machine that ran pair-wifi")
     sub.add_parser("status", help="show apps installed through Marsign and days left")
     refresh_cmd = sub.add_parser("refresh", help="re-sign and reinstall apps close to expiring")
@@ -343,6 +349,10 @@ def main():
         sys.exit(f"\n{e}")
     except KeyboardInterrupt:
         sys.exit(1)
+    except FileNotFoundError as e:
+        sys.exit(f"\nFile not found: {e.filename}")
+    except ValueError as e:
+        sys.exit(f"\n{e}")
     except Exception as e:
         sys.exit(f"\nError: {type(e).__name__}: {e}")
 
