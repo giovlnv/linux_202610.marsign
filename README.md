@@ -16,17 +16,17 @@ Run as `.venv/bin/python marsign.py <command>`.
 
     login                    sign in with your Apple ID (password kept in the keyring unless --no-save)
     install app.ipa          sign with your Apple ID, install, and remember it for refresh
-    status                   apps installed through Marsign and days left
+    status                   apps installed through Marsign, until when, and days left
     refresh [--force]        re-sign apps with 2 days or less left
     pair-wifi                create the Wi-Fi pairing record (once, iPhone on USB)
     import-pairing FILE --host NAME   use a Wi-Fi pairing record made on machine NAME
-    save-password            save the Apple ID password for the timer (systemd-creds)
+    save-password            save the Apple ID password for the daily check (systemd-creds)
     schedule [--time 03:00]  daily check with a systemd timer
-    unschedule               remove the timer
+    unschedule               remove the daily check
     notify-test              send a test notification to Home Assistant
     devices                  the iPhone over USB, or over Wi-Fi when nothing is plugged in
     apps                     installed user apps
-    uninstall BUNDLE_ID      remove an app from the iPhone
+    uninstall BUNDLE_ID      remove an app from the iPhone (asks first; --yes skips the question)
     logout                   forget the saved Apple session
 
 Manual signing, without an Apple ID:

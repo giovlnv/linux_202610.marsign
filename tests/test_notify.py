@@ -21,9 +21,9 @@ class NotifyTest(unittest.TestCase):
         self.assertEqual(body.splitlines(), ["Familiar: boom", "Run marsign.py refresh on ares to see the details and try again.", "Re-signed Athena (until 17/11)."])
 
     def test_unreachable(self):
-        title, body = notify.message(unreachable=[("Familiar", 1.5)])
+        title, body = notify.message(unreachable=[("Familiar", "until 22/11, 1.5 days left")])
         self.assertEqual(title, "Marsign: iPhone not reachable")
-        self.assertIn("Familiar (1.5 days left)", body)
+        self.assertIn("Familiar (until 22/11, 1.5 days left)", body)
 
     def test_send_without_webhook_does_nothing(self):
         with mock.patch.dict(os.environ, {"MARSIGN_HA_WEBHOOK": ""}), mock.patch("requests.post") as post:

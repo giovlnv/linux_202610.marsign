@@ -35,6 +35,19 @@ class RegistryTest(unittest.TestCase):
         entry = {"expires": (now + timedelta(days=2, hours=12)).isoformat()}
         self.assertAlmostEqual(self.registry.days_left(entry, now), 2.5)
 
+    def test_describe_uses_date_and_days_left(self):
+        now = datetime(2026, 11, 20, 15, tzinfo=timezone.utc)
+        expires = now + timedelta(days=1, hours=12)
+        entry = {"expires": expires.isoformat()}
+        until = f"{expires.astimezone():%d/%m}"
+        self.assertEqual(self.registry.describe(entry, now), f"until {until}, 1.5 days left")
+
+    def test_describe_expired(self):
+        now = datetime(2026, 11, 20, 15, tzinfo=timezone.utc)
+        expires = now - timedelta(hours=10)
+        entry = {"expires": expires.isoformat()}
+        self.assertEqual(self.registry.describe(entry, now), f"expired on {expires.astimezone():%d/%m}")
+
 
 if __name__ == "__main__":
     unittest.main()
