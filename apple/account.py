@@ -126,6 +126,11 @@ def _twofa_headers(spd, json_body=False):
     }
 
 
+def _clean_code(typed):
+    """Codes are digits; accept them the way people paste or type them ("123 456", "123-456")."""
+    return "".join(typed.split()).replace("-", "")
+
+
 def _sms(spd, ask_code):
     r = _http("GET", f"{GSA}/auth", _twofa_headers(spd, True))
     try:
@@ -143,7 +148,7 @@ def _sms(spd, ask_code):
     if r.status_code not in (200, 201, 202, 412, 423):
         raise AppleError(f"Apple did not send an SMS code (HTTP {r.status_code}): {r.text[:200]}")
     while True:
-        code = ask_code("Enter the code sent by SMS: ")
+        code = _clean_code(ask_code("Enter the code sent by SMS: "))
         r = _http("POST", f"{GSA}/auth/verify/phone/securitycode", _twofa_headers(spd, True),
                   json.dumps({**body, "securityCode": {"code": code}}))
         if r.status_code == 200:
@@ -168,7 +173,7 @@ def _second_factor(spd, kind, ask_code):
     print("A code should appear on your iPhone or other Apple devices.")
     print("No code? Press Enter to ask for it again, or type sms for a text message.")
     while True:
-        code = ask_code("Code: ")
+        code = _clean_code(ask_code("Code: "))
         if not code:
             _trigger_trusted(spd)
             continue

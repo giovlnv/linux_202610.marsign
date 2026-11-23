@@ -39,6 +39,9 @@ async def usb_devices():
 async def _wifi_provider(udid):
     services = await tunnel_service.get_remote_pairing_tunnel_services(udid=udid)
     if not services:
+        if not pairing_records():
+            raise DeviceNotFound("No iPhone on USB, and Wi-Fi isn't set up on this machine yet. Plug the iPhone in,"
+                                 " or run marsign.py pair-wifi once (or import-pairing with a record from another machine).")
         raise DeviceNotFound("iPhone not found on Wi-Fi. Keep it on the same network as this computer.")
     for extra in services[1:]:
         await extra.close()
@@ -100,7 +103,7 @@ async def pair_wifi(udid=None):
 def import_pairing(path, host=None):
     source = Path(path)
     if not source.name.startswith("remote_") or source.suffix != ".plist":
-        raise ValueError("Expected a remote_<udid>.plist pairing record")
+        raise ValueError(f"{source.name} isn't a pairing record; expected the remote_<udid>.plist made by pair-wifi")
     target = get_home_folder() / source.name
     if source.resolve() != target.resolve():
         shutil.copyfile(source, target)

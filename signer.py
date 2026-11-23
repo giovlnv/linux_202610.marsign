@@ -32,7 +32,7 @@ def ensure_zsign():
     print(f"Downloading zsign {ZSIGN_VERSION}...")
     data = urllib.request.urlopen(url, timeout=60).read()
     if hashlib.sha256(data).hexdigest() != sha256:
-        raise RuntimeError("zsign download failed its checksum; not using it")
+        raise RuntimeError("zsign download failed its checksum, so it isn't used. Run marsign.py setup to download it again.")
     TOOLS.mkdir(exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(data)) as tar:
         exe.write_bytes(tar.extractfile(name).read())
@@ -62,7 +62,7 @@ def sign(ipa, p12, profile, password="", output=None):
     output = Path(output) if output else ipa.with_name(f"{ipa.stem}-signed.ipa")
     info = read_profile(profile)
     if "*" in info["bundle_id"]:
-        raise ValueError("Wildcard profiles aren't supported; use the app's own profile")
+        raise ValueError("Wildcard profiles aren't supported; use the app's own profile.")
     cmd = [
         str(ensure_zsign()), "-f", "-E", "-W",
         "-k", str(p12), "-p", password,

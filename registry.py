@@ -52,3 +52,17 @@ def forget(signed_bundle_id):
 def days_left(entry, now=None):
     expires = datetime.fromisoformat(entry["expires"])
     return (expires - (now or datetime.now(timezone.utc))).total_seconds() / 86400
+
+
+def until(expires):
+    """Expiry date as shown everywhere: day/month in local time (naive datetimes are already local)."""
+    return f"{expires.astimezone():%d/%m}"
+
+
+def describe(entry, now=None):
+    """'until 26/11, 5.3 days left', or 'expired on 20/11' once it has run out."""
+    left = days_left(entry, now)
+    expires = datetime.fromisoformat(entry["expires"])
+    if left <= 0:
+        return f"expired on {until(expires)}"
+    return f"until {until(expires)}, {left:.1f} {'day' if f'{left:.1f}' == '1.0' else 'days'} left"
